@@ -1,8 +1,34 @@
-import puppeteer from 'puppeteer';
+import puppeteer from 'puppeteer-core';
 import { config } from 'dotenv';
 import { initDb, insertLeads } from '../server/db.js';
 
 config();
+
+import fs from 'fs';
+
+// Auto-detect Chrome/Chromium path on common OS locations
+function findBrowserPath() {
+  const paths = [
+    // Windows
+    'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+    'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
+    (process.env.LOCALAPPDATA || '') + '\\Google\\Chrome\\Application\\chrome.exe',
+    // macOS
+    '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+    // Linux
+    '/usr/bin/google-chrome',
+    '/usr/bin/google-chrome-stable',
+    '/usr/bin/chromium',
+    '/usr/bin/chromium-browser',
+  ];
+
+  for (const p of paths) {
+    try {
+      if (fs.existsSync(p)) return p;
+    } catch { /* skip */ }
+  }
+  return null;
+}
 
 const PROPSTREAM_URL = 'https://app.propstream.com';
 
@@ -277,7 +303,17 @@ async function run() {
   // Initialize database
   const db = initDb();
 
+  // Find Chrome/Chromium on your system
+  const executablePath = process.env.CHROME_PATH || findBrowserPath();
+  if (!executablePath) {
+    console.error('Chrome/Chromium not found. Install Google Chrome or set CHROME_PATH in .env');
+    console.error('Download Chrome: https://www.google.com/chrome/');
+    process.exit(1);
+  }
+  console.log(`[Browser] Using: ${executablePath}`);
+
   const browser = await puppeteer.launch({
+    executablePath,
     headless: false, // Set to true for production
     defaultViewport: { width: 1440, height: 900 },
     args: ['--no-sandbox', '--disable-setuid-sandbox'],
