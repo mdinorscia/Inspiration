@@ -1,7 +1,8 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import CheckIn from './components/CheckIn';
 import CommandCenter from './components/CommandCenter';
 import WeeklyReview from './components/WeeklyReview';
+import Chat from './components/Chat';
 import { hasCheckedInToday } from './utils/store';
 
 const NAV_ITEMS = [
@@ -14,6 +15,7 @@ export default function App() {
   const [view, setView] = useState(() => {
     return hasCheckedInToday() ? 'command' : 'checkin';
   });
+  const [chatOpen, setChatOpen] = useState(false);
 
   const navStyle = {
     display: 'flex',
@@ -36,8 +38,28 @@ export default function App() {
     transition: 'all 0.2s',
   });
 
+  const fabStyle = {
+    position: 'fixed',
+    bottom: 24,
+    right: 24,
+    width: 56,
+    height: 56,
+    borderRadius: '50%',
+    background: 'var(--accent)',
+    color: '#fff',
+    border: 'none',
+    fontSize: 24,
+    cursor: 'pointer',
+    boxShadow: '0 4px 16px rgba(99, 102, 241, 0.4)',
+    display: chatOpen ? 'none' : 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 999,
+    transition: 'transform 0.2s',
+  };
+
   return (
-    <div style={{ maxWidth: 720, margin: '0 auto', padding: '24px 16px' }}>
+    <div style={{ maxWidth: 720, margin: '0 auto', padding: '24px 16px', paddingBottom: 80 }}>
       <header style={{ marginBottom: 24, display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
         <div>
           <h1 style={{ fontSize: 20, fontWeight: 800, letterSpacing: '-0.02em' }}>
@@ -65,6 +87,18 @@ export default function App() {
         {view === 'command' && <CommandCenter />}
         {view === 'review' && <WeeklyReview />}
       </main>
+
+      {/* Floating chat button */}
+      <button
+        style={fabStyle}
+        onClick={() => setChatOpen(true)}
+        title="Open Chat"
+      >
+        &#x2709;
+      </button>
+
+      {/* Chat panel */}
+      <Chat isOpen={chatOpen} onClose={() => setChatOpen(false)} />
     </div>
   );
 }
