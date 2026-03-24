@@ -1,0 +1,375 @@
+{
+  "name": "PropStream Lead Farming — RE Outreach",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "propstream-leads",
+        "options": {
+          "rawBody": true
+        },
+        "responseMode": "lastNode"
+      },
+      "id": "webhook-trigger",
+      "name": "Webhook — CSV Upload",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [200, 300],
+      "webhookId": "propstream-leads"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ── PropStream CSV Parser & Field Mapper ──\n// Reads raw CSV from webhook body, parses it, and maps\n// PropStream column names → standard schema fields.\n\nconst rawBody = $input.first().json.body;\nconst marketParam = $input.first().json.query?.market || 'unknown';\n\nif (!rawBody) {\n  throw new Error('No CSV body received. Send CSV as raw text in POST body.');\n}\n\n// --- Simple CSV parser (handles quoted fields with commas) ---\nfunction parseCSV(text) {\n  const lines = text.trim().split(/\\r?\\n/);\n  if (lines.length < 2) throw new Error('CSV must have a header row and at least one data row.');\n\n  const headers = parseCSVLine(lines[0]);\n  const rows = [];\n  for (let i = 1; i < lines.length; i++) {\n    if (!lines[i].trim()) continue;\n    const values = parseCSVLine(lines[i]);\n    const row = {};\n    headers.forEach((h, idx) => { row[h.trim()] = (values[idx] || '').trim(); });\n    rows.push(row);\n  }\n  return rows;\n}\n\nfunction parseCSVLine(line) {\n  const result = [];\n  let current = '';\n  let inQuotes = false;\n  for (let i = 0; i < line.length; i++) {\n    const ch = line[i];\n    if (inQuotes) {\n      if (ch === '\"' && line[i + 1] === '\"') { current += '\"'; i++; }\n      else if (ch === '\"') { inQuotes = false; }\n      else { current += ch; }\n    } else {\n      if (ch === '\"') { inQuotes = true; }\n      else if (ch === ',') { result.push(current); current = ''; }\n      else { current += ch; }\n    }\n  }\n  result.push(current);\n  return result;\n}\n\n// --- Parse ---\nconst records = parseCSV(rawBody);\n\n// --- Map PropStream columns → standard schema ---\nconst mapped = records.map((r, idx) => {\n  const ownerFirst = r['Owner 1 First Name'] || '';\n  const ownerLast = r['Owner 1 Last Name'] || '';\n  const ownerOccupied = (r['Owner Occupied'] || '').toUpperCase();\n  const estLTV = parseFloat(r['Est. Loan-to-Value']) || 0;\n  const estEquity = r['Est. Equity'] || '';\n  const estValue = r['Est. Value'] || '';\n  const foreclosureFactor = r['Foreclosure Factor'] || '';\n\n  return {\n    json: {\n      row_index: idx + 1,\n      market: marketParam,\n\n      // Core property\n      property_address: r['Address'] || '',\n      unit: r['Unit #'] || '',\n      city: r['City'] || '',\n      state: r['State'] || '',\n      zip: r['Zip'] || '',\n      county: r['County'] || '',\n      apn: r['APN'] || '',\n\n      // Owner\n      owner_name: (ownerFirst + ' ' + ownerLast).trim(),\n      owner_first: ownerFirst,\n      owner_last: ownerLast,\n      owner_2_first: r['Owner 2 First Name'] || '',\n      owner_2_last: r['Owner 2 Last Name'] || '',\n\n      // Mailing\n      owner_mailing_address: r['Mailing Address'] || '',\n      owner_mailing_unit: r['Mailing Unit #'] || '',\n      owner_mailing_city: r['Mailing City'] || '',\n      owner_mailing_state: r['Mailing State'] || '',\n      owner_mailing_zip: r['Mailing Zip'] || '',\n      owner_out_of_state: ownerOccupied === 'YES' ? false : true,\n\n      // Financials\n      assessed_value: estValue,\n      estimated_equity: estEquity,\n      estimated_equity_pct: estLTV > 0 ? Math.round(100 - estLTV) : null,\n      total_assessed_value: r['Total Assessed Value'] || '',\n      last_sale_date: r['Last Sale Recording Date'] || '',\n      last_sale_amount: r['Last Sale Amount'] || '',\n      open_loans: r['Total Open Loans'] || '',\n      est_remaining_balance: r['Est. Remaining balance of Open Loans'] || '',\n      est_ltv: r['Est. Loan-to-Value'] || '',\n\n      // Property details\n      property_type: r['Property Type'] || '',\n      beds: r['Bedrooms'] || '',\n      total_baths: r['Total Bathrooms'] || '',\n      sqft: r['Building Sqft'] || '',\n      lot_sqft: r['Lot Size Sqft'] || '',\n      year_built: r['Effective Year Built'] || '',\n\n      // Condition\n      total_condition: r['Total Condition'] || '',\n      interior_condition: r['Interior Condition'] || '',\n      exterior_condition: r['Exterior Condition'] || '',\n      bathroom_condition: r['Bathroom Condition'] || '',\n      kitchen_condition: r['Kitchen Condition'] || '',\n\n      // Contact\n      phone_primary: r['Phone 1'] || '',\n      phone_1_type: r['Phone 1 Type'] || '',\n      phone_1_dnc: r['Phone 1 DNC'] || '',\n      phone_2: r['Phone 2'] || '',\n      phone_3: r['Phone 3'] || '',\n      email_primary: r['Email 1'] || '',\n      email_2: r['Email 2'] || '',\n\n      // Indicators\n      mls_status: r['MLS Status'] || '',\n      mls_date: r['MLS Date'] || '',\n      mls_amount: r['MLS Amount'] || '',\n      pre_foreclosure: foreclosureFactor,\n      lien_amount: r['Lien Amount'] || '',\n      do_not_mail: r['Do Not Mail'] || '',\n      litigator: r['Litigator'] || '',\n      property_status: r['Property Status'] || '',\n\n      // Meta\n      marketing_lists: r['Marketing Lists'] || '',\n      date_added_to_list: r['Date Added to List'] || '',\n      method_of_add: r['Method of Add'] || '',\n      notes: r['Notes'] || '',\n\n      // Pipeline (set downstream)\n      lead_score: null,\n      lead_tier: null,\n      outreach_letter: null,\n      processed_at: new Date().toISOString()\n    }\n  };\n});\n\nreturn mapped;"
+      },
+      "id": "csv-parser",
+      "name": "Parse CSV & Map Fields",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [440, 300]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": { "caseSensitive": false, "leftValue": "", "typeValidation": "strict" },
+                "conditions": [
+                  {
+                    "id": "market-phoenix",
+                    "leftValue": "={{ $json.market }}",
+                    "rightValue": "phoenix_mf",
+                    "operator": { "type": "string", "operation": "equals" }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "phoenix_mf"
+            },
+            {
+              "conditions": {
+                "options": { "caseSensitive": false, "leftValue": "", "typeValidation": "strict" },
+                "conditions": [
+                  {
+                    "id": "market-slc",
+                    "leftValue": "={{ $json.market }}",
+                    "rightValue": "slc_mf",
+                    "operator": { "type": "string", "operation": "equals" }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "slc_mf"
+            },
+            {
+              "conditions": {
+                "options": { "caseSensitive": false, "leftValue": "", "typeValidation": "strict" },
+                "conditions": [
+                  {
+                    "id": "market-heber",
+                    "leftValue": "={{ $json.market }}",
+                    "rightValue": "heber_str",
+                    "operator": { "type": "string", "operation": "equals" }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "heber_str"
+            }
+          ]
+        },
+        "options": {
+          "fallbackOutput": "extra"
+        }
+      },
+      "id": "market-router",
+      "name": "Route by Market",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// ── Merge market branches back together ──\n// All three market outputs + fallback converge here.\n// We tag each lead with market-specific config before scoring.\n\nconst items = $input.all();\n\nconst marketConfig = {\n  phoenix_mf: {\n    label: 'Phoenix Multifamily',\n    sheetTab: 'Phoenix_MF',\n    strategy: 'multifamily_value_add',\n    idealProfile: 'Multifamily 5-50 units in Phoenix metro, value-add opportunities with below-market rents or deferred maintenance'\n  },\n  slc_mf: {\n    label: 'Salt Lake City Multifamily',\n    sheetTab: 'SLC_MF',\n    strategy: 'multifamily_value_add',\n    idealProfile: 'Multifamily properties in SLC metro, focus on student housing near universities or workforce housing'\n  },\n  heber_str: {\n    label: 'Heber City STR',\n    sheetTab: 'Heber_STR',\n    strategy: 'short_term_rental',\n    idealProfile: 'Single family or cabin properties in Heber City/Midway area suitable for Airbnb/VRBO, near Deer Valley or Jordanelle'\n  },\n  unknown: {\n    label: 'Unrouted',\n    sheetTab: 'Other',\n    strategy: 'general',\n    idealProfile: 'Investment property with motivated seller indicators'\n  }\n};\n\nreturn items.map(item => {\n  const market = item.json.market || 'unknown';\n  const config = marketConfig[market] || marketConfig['unknown'];\n  return {\n    json: {\n      ...item.json,\n      market_label: config.label,\n      sheet_tab: config.sheetTab,\n      market_strategy: config.strategy,\n      ideal_profile: config.idealProfile\n    }\n  };\n});"
+      },
+      "id": "merge-markets",
+      "name": "Merge & Tag Market Config",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [920, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "anthropicApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "anthropic-version", "value": "2023-06-01" },
+            { "name": "content-type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"claude-sonnet-4-20250514\",\n  \"max_tokens\": 1024,\n  \"messages\": [\n    {\n      \"role\": \"user\",\n      \"content\": \"You are a real estate investment analyst for Grain & Grit Collective. Score this lead 1-100 and classify as HOT (80-100), WARM (50-79), or COLD (1-49).\\n\\nMarket Strategy: {{ $json.market_strategy }}\\nIdeal Profile: {{ $json.ideal_profile }}\\n\\nProperty: {{ $json.property_address }}, {{ $json.city }}, {{ $json.state }} {{ $json.zip }}\\nType: {{ $json.property_type }} | Beds: {{ $json.beds }} | Sqft: {{ $json.sqft }} | Built: {{ $json.year_built }}\\nOwner: {{ $json.owner_name }} | Out of State: {{ $json.owner_out_of_state }}\\nEst. Value: {{ $json.assessed_value }} | Equity: {{ $json.estimated_equity }} ({{ $json.estimated_equity_pct }}%)\\nLTV: {{ $json.est_ltv }}% | Open Loans: {{ $json.open_loans }}\\nLast Sale: {{ $json.last_sale_amount }} on {{ $json.last_sale_date }}\\nCondition: {{ $json.total_condition }} | Foreclosure Factor: {{ $json.pre_foreclosure }}\\nMLS: {{ $json.mls_status }} {{ $json.mls_date }} {{ $json.mls_amount }}\\nDo Not Mail: {{ $json.do_not_mail }} | Litigator: {{ $json.litigator }}\\n\\nRespond ONLY with valid JSON (no markdown):\\n{\\n  \\\"score\\\": <number 1-100>,\\n  \\\"tier\\\": \\\"HOT\\\" | \\\"WARM\\\" | \\\"COLD\\\",\\n  \\\"reasoning\\\": \\\"<2-3 sentences>\\\",\\n  \\\"estimated_arv\\\": \\\"<your ARV estimate or null>\\\",\\n  \\\"recommended_offer_pct\\\": <percent of ARV to offer, e.g. 70>,\\n  \\\"red_flags\\\": [\\\"<any concerns>\\\"],\\n  \\\"opportunity_notes\\\": \\\"<brief investment thesis>\\\"\\n}\"\n    }\n  ]\n}",
+        "options": {}
+      },
+      "id": "claude-scoring",
+      "name": "Claude — Lead Scoring",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1160, 300],
+      "credentials": {
+        "anthropicApi": {
+          "id": "REPLACE_WITH_CREDENTIAL_ID",
+          "name": "Anthropic API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// ── Parse Claude scoring response & attach to lead ──\n\nconst items = $input.all();\nconst results = [];\n\nfor (const item of items) {\n  const lead = item.json;\n\n  // The HTTP Request node returns the Anthropic API response\n  // Response is in lead.content[0].text (Anthropic Messages API format)\n  let scoreData = {};\n  try {\n    const responseText = lead.content?.[0]?.text || lead.data?.content?.[0]?.text || '';\n    // Strip any markdown fencing if present\n    const cleaned = responseText.replace(/```json\\n?/g, '').replace(/```\\n?/g, '').trim();\n    scoreData = JSON.parse(cleaned);\n  } catch (e) {\n    scoreData = {\n      score: 0,\n      tier: 'ERROR',\n      reasoning: 'Failed to parse Claude response: ' + e.message,\n      estimated_arv: null,\n      recommended_offer_pct: null,\n      red_flags: ['Parse error'],\n      opportunity_notes: ''\n    };\n  }\n\n  // Merge score data back with original lead data\n  // Original lead data was passed through the HTTP Request node context\n  results.push({\n    json: {\n      ...lead,\n      lead_score: scoreData.score,\n      lead_tier: scoreData.tier,\n      score_reasoning: scoreData.reasoning,\n      estimated_arv: scoreData.estimated_arv,\n      recommended_offer_pct: scoreData.recommended_offer_pct,\n      red_flags: (scoreData.red_flags || []).join('; '),\n      opportunity_notes: scoreData.opportunity_notes\n    }\n  });\n}\n\nreturn results;"
+      },
+      "id": "parse-score",
+      "name": "Parse Score Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1400, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "anthropicApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "anthropic-version", "value": "2023-06-01" },
+            { "name": "content-type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"claude-sonnet-4-20250514\",\n  \"max_tokens\": 2048,\n  \"messages\": [\n    {\n      \"role\": \"user\",\n      \"content\": \"You are a direct mail copywriter for Grain & Grit Collective, a real estate investment firm led by Mike DiNorscia. Write a personalized outreach letter for this property owner.\\n\\nTone: Professional but warm. We are NOT wholesalers — we are long-term operators who buy, renovate, and hold. We want to build a relationship, not pressure.\\n\\nOwner: {{ $json.owner_name }}\\nProperty: {{ $json.property_address }}, {{ $json.city }}, {{ $json.state }} {{ $json.zip }}\\nMarket: {{ $json.market_label }}\\nStrategy: {{ $json.market_strategy }}\\nLead Score: {{ $json.lead_score }}/100 ({{ $json.lead_tier }})\\nScore Reasoning: {{ $json.score_reasoning }}\\nOpportunity: {{ $json.opportunity_notes }}\\nOut of State Owner: {{ $json.owner_out_of_state }}\\nEst. Value: {{ $json.assessed_value }}\\nEquity: {{ $json.estimated_equity }}\\nCondition: {{ $json.total_condition }}\\nMLS Status: {{ $json.mls_status }}\\n\\nRespond ONLY with valid JSON (no markdown):\\n{\\n  \\\"letter_subject\\\": \\\"<short subject line for envelope teaser>\\\",\\n  \\\"letter_body\\\": \\\"<the full letter text, 150-250 words>\\\",\\n  \\\"letter_cta\\\": \\\"<call to action sentence>\\\",\\n  \\\"sms_template\\\": \\\"<optional 160-char SMS if phone available>\\\",\\n  \\\"email_subject\\\": \\\"<email subject line>\\\",\\n  \\\"email_body\\\": \\\"<short email version, 100-150 words>\\\"\\n}\"\n    }\n  ]\n}",
+        "options": {}
+      },
+      "id": "claude-outreach",
+      "name": "Claude — Outreach Copy",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1640, 300],
+      "credentials": {
+        "anthropicApi": {
+          "id": "REPLACE_WITH_CREDENTIAL_ID",
+          "name": "Anthropic API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// ── Parse Claude outreach response & merge with lead ──\n\nconst items = $input.all();\nconst results = [];\n\nfor (const item of items) {\n  const lead = item.json;\n\n  let outreach = {};\n  try {\n    const responseText = lead.content?.[0]?.text || lead.data?.content?.[0]?.text || '';\n    const cleaned = responseText.replace(/```json\\n?/g, '').replace(/```\\n?/g, '').trim();\n    outreach = JSON.parse(cleaned);\n  } catch (e) {\n    outreach = {\n      letter_subject: '',\n      letter_body: 'Error generating letter: ' + e.message,\n      letter_cta: '',\n      sms_template: '',\n      email_subject: '',\n      email_body: ''\n    };\n  }\n\n  results.push({\n    json: {\n      ...lead,\n      letter_subject: outreach.letter_subject,\n      letter_body: outreach.letter_body,\n      letter_cta: outreach.letter_cta,\n      sms_template: outreach.sms_template,\n      email_subject: outreach.email_subject,\n      email_body: outreach.email_body\n    }\n  });\n}\n\nreturn results;"
+      },
+      "id": "parse-outreach",
+      "name": "Parse Outreach Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1880, 300]
+    },
+    {
+      "parameters": {
+        "operation": "appendOrUpdate",
+        "documentId": {
+          "__rl": true,
+          "mode": "list",
+          "value": ""
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "byName",
+          "value": "={{ $json.sheet_tab }}"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Row Index": "={{ $json.row_index }}",
+            "Market": "={{ $json.market_label }}",
+            "Property Address": "={{ $json.property_address }}",
+            "City": "={{ $json.city }}",
+            "State": "={{ $json.state }}",
+            "Zip": "={{ $json.zip }}",
+            "Owner Name": "={{ $json.owner_name }}",
+            "Owner Mailing Address": "={{ $json.owner_mailing_address }}",
+            "Owner Mailing City": "={{ $json.owner_mailing_city }}",
+            "Owner Mailing State": "={{ $json.owner_mailing_state }}",
+            "Owner Mailing Zip": "={{ $json.owner_mailing_zip }}",
+            "Out of State": "={{ $json.owner_out_of_state }}",
+            "Phone": "={{ $json.phone_primary }}",
+            "Email": "={{ $json.email_primary }}",
+            "Est. Value": "={{ $json.assessed_value }}",
+            "Est. Equity": "={{ $json.estimated_equity }}",
+            "Equity %": "={{ $json.estimated_equity_pct }}",
+            "Beds": "={{ $json.beds }}",
+            "Sqft": "={{ $json.sqft }}",
+            "Year Built": "={{ $json.year_built }}",
+            "Last Sale Date": "={{ $json.last_sale_date }}",
+            "Last Sale Amount": "={{ $json.last_sale_amount }}",
+            "MLS Status": "={{ $json.mls_status }}",
+            "Foreclosure Factor": "={{ $json.pre_foreclosure }}",
+            "Lead Score": "={{ $json.lead_score }}",
+            "Lead Tier": "={{ $json.lead_tier }}",
+            "Score Reasoning": "={{ $json.score_reasoning }}",
+            "Est. ARV": "={{ $json.estimated_arv }}",
+            "Offer %": "={{ $json.recommended_offer_pct }}",
+            "Red Flags": "={{ $json.red_flags }}",
+            "Opportunity Notes": "={{ $json.opportunity_notes }}",
+            "Letter Subject": "={{ $json.letter_subject }}",
+            "SMS Template": "={{ $json.sms_template }}",
+            "Email Subject": "={{ $json.email_subject }}",
+            "Processed At": "={{ $json.processed_at }}"
+          }
+        },
+        "options": {}
+      },
+      "id": "google-sheets-crm",
+      "name": "Google Sheets — CRM Log",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [2120, 200],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "REPLACE_WITH_CREDENTIAL_ID",
+          "name": "Google Sheets Account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// ── Build print-ready CSV for direct mail fulfillment ──\n// Columns: owner name, mailing address, letter subject, letter body, CTA\n\nconst items = $input.all();\n\n// CSV header\nconst headers = [\n  'Owner Name', 'Mailing Address', 'Mailing City', 'Mailing State',\n  'Mailing Zip', 'Property Address', 'City', 'State', 'Zip',\n  'Lead Score', 'Lead Tier', 'Letter Subject', 'Letter Body',\n  'Letter CTA', 'SMS Template', 'Email Subject', 'Email Body',\n  'Phone', 'Email'\n];\n\nfunction csvEscape(val) {\n  const s = String(val || '');\n  if (s.includes(',') || s.includes('\"') || s.includes('\\n')) {\n    return '\"' + s.replace(/\"/g, '\"\"') + '\"';\n  }\n  return s;\n}\n\nconst rows = [headers.map(csvEscape).join(',')];\n\nfor (const item of items) {\n  const d = item.json;\n  rows.push([\n    d.owner_name, d.owner_mailing_address, d.owner_mailing_city,\n    d.owner_mailing_state, d.owner_mailing_zip,\n    d.property_address, d.city, d.state, d.zip,\n    d.lead_score, d.lead_tier, d.letter_subject, d.letter_body,\n    d.letter_cta, d.sms_template, d.email_subject, d.email_body,\n    d.phone_primary, d.email_primary\n  ].map(csvEscape).join(','));\n}\n\nconst csvContent = rows.join('\\n');\nconst market = items[0]?.json?.market || 'unknown';\nconst date = new Date().toISOString().split('T')[0];\n\nreturn [{\n  json: {\n    fileName: `GGC-${market}-outreach-${date}.csv`,\n    csvContent: csvContent,\n    totalLeads: items.length,\n    hotLeads: items.filter(i => i.json.lead_tier === 'HOT').length,\n    warmLeads: items.filter(i => i.json.lead_tier === 'WARM').length,\n    coldLeads: items.filter(i => i.json.lead_tier === 'COLD').length,\n    market: market,\n    market_label: items[0]?.json?.market_label || 'Unknown'\n  },\n  binary: {\n    data: {\n      data: Buffer.from(csvContent).toString('base64'),\n      mimeType: 'text/csv',\n      fileName: `GGC-${market}-outreach-${date}.csv`\n    }\n  }\n}];"
+      },
+      "id": "csv-export",
+      "name": "Build Print-Ready CSV",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2120, 420]
+    },
+    {
+      "parameters": {
+        "sendTo": "mdinorscia@ourggc.com",
+        "subject": "=GGC Lead Report: {{ $json.market_label }} — {{ $json.totalLeads }} leads processed",
+        "emailType": "html",
+        "message": "=<div style=\"font-family: Arial, sans-serif; max-width: 600px;\">\n<h2 style=\"color: #2d3748;\">PropStream Lead Farming Report</h2>\n<p><strong>Market:</strong> {{ $json.market_label }}<br>\n<strong>Date:</strong> {{ $now.format('MMMM d, yyyy') }}<br>\n<strong>Total Leads Processed:</strong> {{ $json.totalLeads }}</p>\n\n<table style=\"border-collapse: collapse; width: 100%; margin: 16px 0;\">\n<tr style=\"background: #2d3748; color: white;\">\n  <th style=\"padding: 8px 12px; text-align: left;\">Tier</th>\n  <th style=\"padding: 8px 12px; text-align: right;\">Count</th>\n</tr>\n<tr style=\"background: #fed7d7;\">\n  <td style=\"padding: 8px 12px;\">🔥 HOT (80-100)</td>\n  <td style=\"padding: 8px 12px; text-align: right; font-weight: bold;\">{{ $json.hotLeads }}</td>\n</tr>\n<tr style=\"background: #fefcbf;\">\n  <td style=\"padding: 8px 12px;\">⚡ WARM (50-79)</td>\n  <td style=\"padding: 8px 12px; text-align: right; font-weight: bold;\">{{ $json.warmLeads }}</td>\n</tr>\n<tr style=\"background: #c6f6d5;\">\n  <td style=\"padding: 8px 12px;\">❄️ COLD (1-49)</td>\n  <td style=\"padding: 8px 12px; text-align: right; font-weight: bold;\">{{ $json.coldLeads }}</td>\n</tr>\n</table>\n\n<p>The print-ready CSV for direct mail fulfillment is attached.</p>\n<p>Full results have been logged to the <strong>{{ $json.market_label }}</strong> tab in your Google Sheets CRM.</p>\n\n<hr style=\"border: none; border-top: 1px solid #e2e8f0; margin: 24px 0;\">\n<p style=\"color: #718096; font-size: 12px;\">Grain &amp; Grit Collective — Automated Lead Farming Pipeline<br>\nPowered by n8n + Claude</p>\n</div>",
+        "options": {
+          "attachmentsUi": {
+            "attachmentsBinary": [
+              {
+                "binaryPropertyName": "data"
+              }
+            ]
+          }
+        }
+      },
+      "id": "summary-email",
+      "name": "Gmail — Summary Report",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [2360, 420],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "REPLACE_WITH_CREDENTIAL_ID",
+          "name": "Gmail Account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\n  \"status\": \"success\",\n  \"message\": \"PropStream leads processed successfully\",\n  \"market\": \"{{ $json.market_label }}\",\n  \"total_leads\": {{ $json.totalLeads }},\n  \"hot\": {{ $json.hotLeads }},\n  \"warm\": {{ $json.warmLeads }},\n  \"cold\": {{ $json.coldLeads }},\n  \"csv_file\": \"{{ $json.fileName }}\",\n  \"crm_updated\": true,\n  \"email_sent\": true\n}",
+        "options": {}
+      },
+      "id": "webhook-response",
+      "name": "Webhook Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [2600, 420]
+    }
+  ],
+  "connections": {
+    "Webhook — CSV Upload": {
+      "main": [
+        [{ "node": "Parse CSV & Map Fields", "type": "main", "index": 0 }]
+      ]
+    },
+    "Parse CSV & Map Fields": {
+      "main": [
+        [{ "node": "Route by Market", "type": "main", "index": 0 }]
+      ]
+    },
+    "Route by Market": {
+      "main": [
+        [{ "node": "Merge & Tag Market Config", "type": "main", "index": 0 }],
+        [{ "node": "Merge & Tag Market Config", "type": "main", "index": 0 }],
+        [{ "node": "Merge & Tag Market Config", "type": "main", "index": 0 }],
+        [{ "node": "Merge & Tag Market Config", "type": "main", "index": 0 }]
+      ]
+    },
+    "Merge & Tag Market Config": {
+      "main": [
+        [{ "node": "Claude — Lead Scoring", "type": "main", "index": 0 }]
+      ]
+    },
+    "Claude — Lead Scoring": {
+      "main": [
+        [{ "node": "Parse Score Response", "type": "main", "index": 0 }]
+      ]
+    },
+    "Parse Score Response": {
+      "main": [
+        [{ "node": "Claude — Outreach Copy", "type": "main", "index": 0 }]
+      ]
+    },
+    "Claude — Outreach Copy": {
+      "main": [
+        [{ "node": "Parse Outreach Response", "type": "main", "index": 0 }]
+      ]
+    },
+    "Parse Outreach Response": {
+      "main": [
+        [
+          { "node": "Google Sheets — CRM Log", "type": "main", "index": 0 },
+          { "node": "Build Print-Ready CSV", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Build Print-Ready CSV": {
+      "main": [
+        [
+          { "node": "Gmail — Summary Report", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Gmail — Summary Report": {
+      "main": [
+        [{ "node": "Webhook Response", "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner",
+    "errorWorkflow": ""
+  },
+  "staticData": null,
+  "tags": [
+    { "name": "PropStream" },
+    { "name": "Lead Generation" },
+    { "name": "GGC" }
+  ],
+  "pinData": {}
+}
