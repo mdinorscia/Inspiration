@@ -116,11 +116,80 @@ export function getWeeklyReview() {
   return data.weekly?.[getWeekKey()] || null;
 }
 
-// Get carried forward items (incomplete from yesterday)
+// Get carried forward items (incomplete from yesterday) with original indices
 export function getCarriedForward() {
   const yesterday = getYesterday();
   if (!yesterday?.priorities) return [];
-  return yesterday.priorities.filter((p) => !p.done);
+  const d = new Date();
+  d.setDate(d.getDate() - 1);
+  const yesterdayKey = d.toISOString().split('T')[0];
+  return yesterday.priorities
+    .map((p, i) => ({ ...p, _sourceIndex: i, _sourceDay: yesterdayKey }))
+    .filter((p) => !p.done);
+}
+
+// Move a priority to today's daily list from any source
+export function movePriorityToDaily(sourceDayKey, sourceIndex, sourceType) {
+  const data = load();
+  let priority;
+
+  if (sourceType === 'weekly-manual') {
+    const weekKey = getWeekKey();
+    priority = data.weeklyManual?.[weekKey]?.[sourceIndex];
+    if (!priority) return;
+    data.weeklyManual[weekKey].splice(sourceIndex, 1);
+  } else {
+    priority = data.daily?.[sourceDayKey]?.priorities?.[sourceIndex];
+    if (!priority) return;
+    data.daily[sourceDayKey].priorities[sourceIndex].done = true;
+  }
+
+  const todayKey = getTodayKey();
+  if (!data.daily) data.daily = {};
+  if (!data.daily[todayKey]) data.daily[todayKey] = {};
+  if (!data.daily[todayKey].priorities) data.daily[todayKey].priorities = [];
+
+  data.daily[todayKey].priorities.push({
+    text: priority.text,
+    level: priority.level,
+    done: false,
+    delegation: priority.delegation || null,
+    track: priority.track || null,
+  });
+
+  save(data);
+}
+
+// Move a priority to the weekly bucket
+export function movePriorityToWeekly(sourceDayKey, sourceIndex) {
+  const data = load();
+  const priority = data.daily?.[sourceDayKey]?.priorities?.[sourceIndex];
+  if (!priority) return;
+
+  // Remove from source day
+  data.daily[sourceDayKey].priorities.splice(sourceIndex, 1);
+
+  // Add to manual weekly list
+  const weekKey = getWeekKey();
+  if (!data.weeklyManual) data.weeklyManual = {};
+  if (!data.weeklyManual[weekKey]) data.weeklyManual[weekKey] = [];
+
+  data.weeklyManual[weekKey].push({
+    text: priority.text,
+    level: priority.level,
+    done: false,
+    delegation: priority.delegation || null,
+    track: priority.track || null,
+  });
+
+  save(data);
+}
+
+// Get manually-placed weekly priorities
+export function getManualWeeklyPriorities() {
+  const data = load();
+  const weekKey = getWeekKey();
+  return (data.weeklyManual?.[weekKey] || []).map((p, i) => ({ ...p, _manualIndex: i })).filter(p => !p.done);
 }
 
 // Get all daily keys sorted descending

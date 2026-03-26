@@ -1,14 +1,15 @@
 import { useState, useEffect } from 'react';
 import { CATEGORIES, getScoreColor, getWeekNumber, formatDate, getTodayKey } from '../utils/constants';
-import { getToday, getCarriedForward, togglePriority, getWeekEntries } from '../utils/store';
+import { getToday, getCarriedForward, togglePriority, getWeekEntries, movePriorityToDaily, movePriorityToWeekly, getManualWeeklyPriorities } from '../utils/store';
 
 export default function CommandCenter() {
   const [, setTick] = useState(0);
   const today = getToday();
-  const carried = getCarriedForward();
   const todayKey = getTodayKey();
   const weekEntries = getWeekEntries();
 
+  const carried = getCarriedForward();
+  const manualWeekly = getManualWeeklyPriorities();
   const forceUpdate = () => setTick((t) => t + 1);
 
   const now = new Date();
@@ -28,16 +29,42 @@ export default function CommandCenter() {
     forceUpdate();
   }
 
+  function handleMoveToDaily(sourceDayKey, sourceIndex, sourceType) {
+    movePriorityToDaily(sourceDayKey, sourceIndex, sourceType);
+    forceUpdate();
+  }
+
+  function handleMoveToWeekly(sourceDayKey, sourceIndex) {
+    movePriorityToWeekly(sourceDayKey, sourceIndex);
+    forceUpdate();
+  }
+
+  const moveBtnStyle = {
+    fontSize: 10,
+    fontWeight: 600,
+    padding: '2px 8px',
+    borderRadius: 4,
+    border: '1px solid var(--border)',
+    background: 'var(--bg-input)',
+    color: 'var(--text-muted)',
+    cursor: 'pointer',
+    whiteSpace: 'nowrap',
+  };
+
   // Compute weekly priorities: aggregate all week's priorities that aren't done
   const weeklyPriorities = [];
   for (const entry of weekEntries) {
     if (entry.priorities) {
-      for (const p of entry.priorities) {
+      entry.priorities.forEach((p, idx) => {
         if (!p.done && entry.date !== todayKey) {
-          weeklyPriorities.push({ ...p, fromDate: entry.date });
+          weeklyPriorities.push({ ...p, fromDate: entry.date, _sourceIndex: idx, _sourceType: 'aggregated' });
         }
-      }
+      });
     }
+  }
+  // Include manually-placed weekly items
+  for (const mp of manualWeekly) {
+    weeklyPriorities.push({ ...mp, fromDate: 'manual', _sourceType: 'weekly-manual' });
   }
 
   if (!today) {
@@ -68,7 +95,9 @@ export default function CommandCenter() {
           {carried.map((item, i) => (
             <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
               <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--amber)' }}>{item.level}</span>
-              <span style={{ fontSize: 13 }}>{item.text}</span>
+              <span style={{ fontSize: 13, flex: 1 }}>{item.text}</span>
+              <button style={moveBtnStyle} onClick={() => handleMoveToDaily(item._sourceDay, item._sourceIndex)}>→ Daily</button>
+              <button style={moveBtnStyle} onClick={() => handleMoveToWeekly(item._sourceDay, item._sourceIndex)}>→ Weekly</button>
             </div>
           ))}
         </div>
@@ -148,7 +177,7 @@ export default function CommandCenter() {
                 >
                   {item.level}
                 </span>
-                <div>
+                <div style={{ flex: 1 }}>
                   <p style={{ fontSize: 14, textDecoration: item.done ? 'line-through' : 'none' }}>
                     {item.text}
                   </p>
@@ -158,6 +187,9 @@ export default function CommandCenter() {
                     </p>
                   )}
                 </div>
+                {!item.done && (
+                  <button style={{ ...moveBtnStyle, alignSelf: 'center' }} onClick={() => handleMoveToWeekly(todayKey, i)}>→ Weekly</button>
+                )}
               </div>
             );
           })}
@@ -182,9 +214,10 @@ export default function CommandCenter() {
                 }}
               >
                 <span style={{ fontSize: 11, fontWeight: 700, color }}>{item.level}</span>
-                <span style={{ fontSize: 13 }}>{item.text}</span>
-                <span style={{ fontSize: 11, color: 'var(--text-dim)', marginLeft: 'auto', whiteSpace: 'nowrap' }}>
-                  {item.fromDate}
+                <span style={{ fontSize: 13, flex: 1 }}>{item.text}</span>
+                <button style={moveBtnStyle} onClick={() => handleMoveToDaily(item.fromDate, item._sourceType === 'weekly-manual' ? item._manualIndex : item._sourceIndex, item._sourceType)}>→ Daily</button>
+                <span style={{ fontSize: 11, color: 'var(--text-dim)', whiteSpace: 'nowrap' }}>
+                  {item.fromDate === 'manual' ? 'moved' : item.fromDate}
                 </span>
               </div>
             );
