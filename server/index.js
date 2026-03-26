@@ -3,7 +3,7 @@ import cors from 'cors';
 import { config } from 'dotenv';
 import { parse } from 'csv-parse/sync';
 import { stringify } from 'csv-stringify/sync';
-import { initDb, getLeads, updateLead, deleteLead, getStats, scoreLeads, insertLeads, logActivity, getActivity } from './db.js';
+import { initDb, getLeads, updateLead, deleteLead, getStats, scoreLeads, insertLeads, logActivity, getActivity, getPriorities, createPriority, updatePriority, deletePriority, movePriority } from './db.js';
 
 config();
 
@@ -130,6 +130,43 @@ app.post('/api/campaigns', (req, res) => {
   const { name, type } = req.body;
   const result = db.prepare('INSERT INTO campaigns (name, type) VALUES (?, ?)').run(name, type);
   res.json({ id: result.lastInsertRowid, name, type, status: 'draft' });
+});
+
+// --- Priorities (Command Center) ---
+app.get('/api/priorities', (req, res) => {
+  res.json(getPriorities(db));
+});
+
+app.post('/api/priorities', (req, res) => {
+  const { title, section } = req.body;
+  if (!title) return res.status(400).json({ error: 'title is required' });
+  const priority = createPriority(db, { title, section });
+  res.json(priority);
+});
+
+app.put('/api/priorities/:id', (req, res) => {
+  const priority = updatePriority(db, Number(req.params.id), req.body);
+  if (priority) {
+    res.json(priority);
+  } else {
+    res.status(404).json({ error: 'Priority not found' });
+  }
+});
+
+app.delete('/api/priorities/:id', (req, res) => {
+  deletePriority(db, Number(req.params.id));
+  res.json({ success: true });
+});
+
+app.post('/api/priorities/:id/move', (req, res) => {
+  const { section } = req.body;
+  if (!section) return res.status(400).json({ error: 'section is required' });
+  const priority = movePriority(db, Number(req.params.id), section);
+  if (priority) {
+    res.json(priority);
+  } else {
+    res.status(400).json({ error: 'Invalid section. Use: carried_forward, daily, weekly' });
+  }
 });
 
 const PORT = process.env.PORT || 3001;

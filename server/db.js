@@ -70,6 +70,18 @@ export function initDb() {
     CREATE INDEX IF NOT EXISTS idx_leads_status ON leads(status);
     CREATE INDEX IF NOT EXISTS idx_leads_score ON leads(score);
     CREATE INDEX IF NOT EXISTS idx_leads_location ON leads(search_location);
+
+    CREATE TABLE IF NOT EXISTS priorities (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      title TEXT NOT NULL,
+      section TEXT NOT NULL DEFAULT 'daily',
+      sort_order INTEGER DEFAULT 0,
+      completed INTEGER DEFAULT 0,
+      created_at TEXT DEFAULT (datetime('now')),
+      updated_at TEXT DEFAULT (datetime('now'))
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_priorities_section ON priorities(section);
   `);
 
   return db;
@@ -262,4 +274,49 @@ export function logActivity(db, leadId, action, details) {
 
 export function getActivity(db, leadId) {
   return db.prepare('SELECT * FROM activity_log WHERE lead_id = ? ORDER BY created_at DESC').all(leadId);
+}
+
+// --- Priorities (Command Center) ---
+
+export function getPriorities(db) {
+  return db.prepare('SELECT * FROM priorities ORDER BY section, sort_order, created_at').all();
+}
+
+export function createPriority(db, { title, section = 'daily' }) {
+  const maxOrder = db.prepare('SELECT COALESCE(MAX(sort_order), 0) as max FROM priorities WHERE section = ?').get(section);
+  const result = db.prepare('INSERT INTO priorities (title, section, sort_order) VALUES (?, ?, ?)').run(title, section, maxOrder.max + 1);
+  return db.prepare('SELECT * FROM priorities WHERE id = ?').get(result.lastInsertRowid);
+}
+
+export function updatePriority(db, id, updates) {
+  const allowed = ['title', 'section', 'sort_order', 'completed'];
+  const setClauses = [];
+  const params = { id };
+
+  for (const [key, value] of Object.entries(updates)) {
+    const dbKey = key === 'sortOrder' ? 'sort_order' : key;
+    if (allowed.includes(dbKey)) {
+      setClauses.push(`${dbKey} = @${dbKey}`);
+      params[dbKey] = value;
+    }
+  }
+
+  if (setClauses.length === 0) return null;
+
+  setClauses.push("updated_at = datetime('now')");
+  db.prepare(`UPDATE priorities SET ${setClauses.join(', ')} WHERE id = @id`).run(params);
+  return db.prepare('SELECT * FROM priorities WHERE id = ?').get(id);
+}
+
+export function deletePriority(db, id) {
+  return db.prepare('DELETE FROM priorities WHERE id = ?').run(id);
+}
+
+export function movePriority(db, id, newSection) {
+  const validSections = ['carried_forward', 'daily', 'weekly'];
+  if (!validSections.includes(newSection)) return null;
+
+  const maxOrder = db.prepare('SELECT COALESCE(MAX(sort_order), 0) as max FROM priorities WHERE section = ?').get(newSection);
+  db.prepare("UPDATE priorities SET section = ?, sort_order = ?, updated_at = datetime('now') WHERE id = ?").run(newSection, maxOrder.max + 1, id);
+  return db.prepare('SELECT * FROM priorities WHERE id = ?').get(id);
 }

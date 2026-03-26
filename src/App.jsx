@@ -5,8 +5,9 @@ import LeadDetail from './components/LeadDetail';
 import ImportExport from './components/ImportExport';
 import Campaigns from './components/Campaigns';
 import Settings from './components/Settings';
+import CommandCenter from './components/CommandCenter';
 
-const TABS = ['Dashboard', 'Leads', 'Campaigns', 'Import/Export', 'Settings'];
+const TABS = ['Dashboard', 'Command Center', 'Leads', 'Campaigns', 'Import/Export', 'Settings'];
 
 export default function App() {
   const [tab, setTab] = useState('Dashboard');
@@ -33,6 +34,7 @@ export default function App() {
 
       <main style={styles.main}>
         {tab === 'Dashboard' && <Dashboard onViewLeads={() => setTab('Leads')} />}
+        {tab === 'Command Center' && <CommandCenter />}
         {tab === 'Leads' && !selectedLead && (
           <LeadTable onSelect={setSelectedLead} />
         )}

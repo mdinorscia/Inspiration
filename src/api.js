@@ -24,4 +24,11 @@ export const api = {
   getCampaigns: () => request('/campaigns'),
   createCampaign: (name, type) => request('/campaigns', { method: 'POST', body: JSON.stringify({ name, type }) }),
   getActivity: (leadId) => request(`/leads/${leadId}/activity`),
+
+  // Priorities (Command Center)
+  getPriorities: () => request('/priorities'),
+  createPriority: (title, section) => request('/priorities', { method: 'POST', body: JSON.stringify({ title, section }) }),
+  updatePriority: (id, data) => request(`/priorities/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  deletePriority: (id) => request(`/priorities/${id}`, { method: 'DELETE' }),
+  movePriority: (id, section) => request(`/priorities/${id}/move`, { method: 'POST', body: JSON.stringify({ section }) }),
 };
