@@ -12,7 +12,18 @@ function load() {
 }
 
 function save(data) {
-  localStorage.setItem(BYC_STORAGE_KEY, JSON.stringify(data));
+  try {
+    localStorage.setItem(BYC_STORAGE_KEY, JSON.stringify(data));
+  } catch (e) {
+    // If localStorage is full, clear old entries and retry
+    const keys = Object.keys(data.sites || {}).sort();
+    if (keys.length > 10) {
+      delete data.sites[keys[0]];
+      localStorage.setItem(BYC_STORAGE_KEY, JSON.stringify(data));
+    } else {
+      throw e;
+    }
+  }
 }
 
 export const BYC_CATEGORIES = [

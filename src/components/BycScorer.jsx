@@ -50,59 +50,49 @@ export default function BycScorer() {
   }
 
   function handleSubmit() {
-    // Validate required fields
+    // Validate - only require site name
     if (!siteName.trim()) {
       setSubmitState('error');
       setErrorMsg('Please enter a site name.');
       return;
     }
 
-    const unanswered = BYC_CATEGORIES.filter((c) => scores[c.id] === 0);
-    if (unanswered.length > 0) {
-      setSubmitState('error');
-      setErrorMsg(`Please rate all categories. Missing: ${unanswered.map((c) => c.label).join(', ')}`);
-      return;
-    }
-
     setSubmitState('submitting');
     setErrorMsg('');
 
-    // Save locally (simulated brief delay for UX)
-    setTimeout(() => {
-      try {
-        saveBycScore({
-          siteName: siteName.trim(),
-          siteAddress: siteAddress.trim(),
-          scores,
-          totalScore,
-          maxScore: MAX_SCORE,
-          notes: notes.trim(),
-          anchorTenant: anchorTenant.trim(),
-          firstWatchDistance: firstWatchDistance.trim(),
+    try {
+      saveBycScore({
+        siteName: siteName.trim(),
+        siteAddress: siteAddress.trim(),
+        scores,
+        totalScore,
+        maxScore: MAX_SCORE,
+        notes: notes.trim(),
+        anchorTenant: anchorTenant.trim(),
+        firstWatchDistance: firstWatchDistance.trim(),
+      });
+
+      setSubmitState('success');
+      setHistory(getBycScores());
+
+      // Reset form after delay
+      setTimeout(() => {
+        setSiteName('');
+        setSiteAddress('');
+        setScores(() => {
+          const init = {};
+          BYC_CATEGORIES.forEach((c) => (init[c.id] = 0));
+          return init;
         });
-
-        setSubmitState('success');
-        setHistory(getBycScores());
-
-        // Reset form after delay
-        setTimeout(() => {
-          setSiteName('');
-          setSiteAddress('');
-          setScores(() => {
-            const init = {};
-            BYC_CATEGORIES.forEach((c) => (init[c.id] = 0));
-            return init;
-          });
-          setNotes('');
-          setAnchorTenant('');
-          setFirstWatchDistance('');
-          setSubmitState('idle');
-        }, 2000);
-      } catch (err) {
-        setSubmitState('error');
-        setErrorMsg('Submission failed — check connection and try again.');
-      }
-    }, 400);
+        setNotes('');
+        setAnchorTenant('');
+        setFirstWatchDistance('');
+        setSubmitState('idle');
+      }, 2000);
+    } catch (err) {
+      setSubmitState('error');
+      setErrorMsg('Save failed — storage may be full. Clear browser data and retry.');
+    }
   }
 
   const cardStyle = {
