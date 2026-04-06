@@ -1,5 +1,7 @@
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 import { BYC_CATEGORIES, MAX_SCORE, saveBycScore, getBycScores } from '../utils/bycStore';
+
+const BUILD_VERSION = 'v3-' + Date.now().toString(36);
 
 function StarRating({ value, onChange }) {
   const [hover, setHover] = useState(0);
@@ -57,56 +59,50 @@ export default function BycScorer() {
       return;
     }
 
-    setSubmitState('submitting');
+    // Clear previous errors
     setErrorMsg('');
 
-    // Save to localStorage
-    let saved = false;
+    // Build payload
+    const payload = {
+      siteName: siteName.trim(),
+      siteAddress: siteAddress.trim(),
+      scores,
+      totalScore,
+      maxScore: MAX_SCORE,
+      notes: notes.trim(),
+      anchorTenant: anchorTenant.trim(),
+      firstWatchDistance: firstWatchDistance.trim(),
+    };
+
+    // Attempt save — catch absolutely everything
     try {
-      saveBycScore({
-        siteName: siteName.trim(),
-        siteAddress: siteAddress.trim(),
-        scores,
-        totalScore,
-        maxScore: MAX_SCORE,
-        notes: notes.trim(),
-        anchorTenant: anchorTenant.trim(),
-        firstWatchDistance: firstWatchDistance.trim(),
-      });
-      saved = true;
+      saveBycScore(payload);
     } catch (err) {
-      console.error('BYC save error:', err);
       setSubmitState('error');
-      setErrorMsg('Save failed — storage may be full. Clear browser data and retry.');
+      setErrorMsg('Save error: ' + (err && err.message ? err.message : String(err)));
       return;
     }
 
-    // If we get here, save succeeded — update UI separately so
-    // any error in history refresh can't flip state back to 'error'
-    if (saved) {
-      setSubmitState('success');
-      try {
-        setHistory(getBycScores());
-      } catch (e) {
-        // History refresh failed but save succeeded — not critical
-        console.warn('History refresh error:', e);
-      }
+    // Save succeeded
+    setSubmitState('success');
 
-      // Reset form after delay
-      setTimeout(() => {
-        setSiteName('');
-        setSiteAddress('');
-        setScores(() => {
-          const init = {};
-          BYC_CATEGORIES.forEach((c) => (init[c.id] = 0));
-          return init;
-        });
-        setNotes('');
-        setAnchorTenant('');
-        setFirstWatchDistance('');
-        setSubmitState('idle');
-      }, 2000);
-    }
+    // Refresh history (non-critical)
+    try { setHistory(getBycScores()); } catch (_) { /* ignore */ }
+
+    // Reset form after delay
+    setTimeout(() => {
+      setSiteName('');
+      setSiteAddress('');
+      setScores(() => {
+        const init = {};
+        BYC_CATEGORIES.forEach((c) => (init[c.id] = 0));
+        return init;
+      });
+      setNotes('');
+      setAnchorTenant('');
+      setFirstWatchDistance('');
+      setSubmitState('idle');
+    }, 2500);
   }
 
   const cardStyle = {
@@ -141,7 +137,7 @@ export default function BycScorer() {
   const btnPrimary = {
     width: '100%',
     padding: '14px 24px',
-    background: 'var(--accent)',
+    background: '#f59e0b',
     color: '#fff',
     border: 'none',
     borderRadius: 12,
@@ -169,6 +165,9 @@ export default function BycScorer() {
         <h2 style={{ fontSize: 22, fontWeight: 700 }}>BYC Site Scorer</h2>
         <p style={{ color: 'var(--text-muted)', fontSize: 13, marginTop: 4 }}>
           Rate each category 1-5 stars
+        </p>
+        <p style={{ color: 'var(--text-dim)', fontSize: 10, marginTop: 2 }}>
+          {BUILD_VERSION}
         </p>
       </div>
 
