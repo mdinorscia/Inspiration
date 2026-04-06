@@ -2,6 +2,7 @@ import { useState } from 'react';
 import CheckIn from './components/CheckIn';
 import CommandCenter from './components/CommandCenter';
 import WeeklyReview from './components/WeeklyReview';
+import BycScorer from './components/BycScorer';
 import Chat from './components/Chat';
 import { hasCheckedInToday } from './utils/store';
 
@@ -9,6 +10,7 @@ const NAV_ITEMS = [
   { id: 'command', label: 'Command Center' },
   { id: 'checkin', label: 'Check-In' },
   { id: 'review', label: 'Weekly Review' },
+  { id: 'byc', label: 'BYC Scorer' },
 ];
 
 export default function App() {
@@ -86,6 +88,7 @@ export default function App() {
         {view === 'checkin' && <CheckIn onComplete={() => setView('command')} />}
         {view === 'command' && <CommandCenter />}
         {view === 'review' && <WeeklyReview />}
+        {view === 'byc' && <BycScorer />}
       </main>
 
       {/* Floating chat button */}
