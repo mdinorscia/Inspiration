@@ -60,6 +60,8 @@ export default function BycScorer() {
     setSubmitState('submitting');
     setErrorMsg('');
 
+    // Save to localStorage
+    let saved = false;
     try {
       saveBycScore({
         siteName: siteName.trim(),
@@ -71,9 +73,24 @@ export default function BycScorer() {
         anchorTenant: anchorTenant.trim(),
         firstWatchDistance: firstWatchDistance.trim(),
       });
+      saved = true;
+    } catch (err) {
+      console.error('BYC save error:', err);
+      setSubmitState('error');
+      setErrorMsg('Save failed — storage may be full. Clear browser data and retry.');
+      return;
+    }
 
+    // If we get here, save succeeded — update UI separately so
+    // any error in history refresh can't flip state back to 'error'
+    if (saved) {
       setSubmitState('success');
-      setHistory(getBycScores());
+      try {
+        setHistory(getBycScores());
+      } catch (e) {
+        // History refresh failed but save succeeded — not critical
+        console.warn('History refresh error:', e);
+      }
 
       // Reset form after delay
       setTimeout(() => {
@@ -89,9 +106,6 @@ export default function BycScorer() {
         setFirstWatchDistance('');
         setSubmitState('idle');
       }, 2000);
-    } catch (err) {
-      setSubmitState('error');
-      setErrorMsg('Save failed — storage may be full. Clear browser data and retry.');
     }
   }
 
